@@ -1,117 +1,59 @@
-from flask import Flask, request, abort
-from linebot.v3 import WebhookHandler
-from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    Configuration,
-    ApiClient,
-    MessagingApi,
-    ReplyMessageRequest,
-    TemplateMessage,
-    ButtonsTemplate,
-    PostbackAction,
-    TextMessage
-)
-from linebot.v3.webhooks import (
-    MessageEvent,
-    FollowEvent,
-    PostbackEvent,
-    TextMessageContent
-)
+import os
+from openai import OpenAI
+
+from flask import Flask, request
+from linebot import LineBotApi, WebhookHandler
+from linebot.models import TextSendMessage  # 載入 TextSendMessage 模組
+import json
 
 app = Flask(__name__)
 
-# 設定 LINE Bot 的認證資訊
-CHANNEL_ACCESS_TOKEN = 'Wz5hTGSPFsJlWWdhfkd2u9lNJ3laOWT/+HYdLgTYjSj3PBgboejmYEnyI41hF7FdJIlETGbIFi47wA5vUNCkuSGCws7UGNHT3a1lfY3RT8gxDZKM5gEQgFhi9k+UPxcyt7cnETvmluK+cFkqEPiJpQdB04t89/1O/w1cDnyilFU='
-CHANNEL_SECRET = 'bfc154e4be5c1d9a4b2656addf1e479d'
-# 初始化 Configuration 和 WebhookHandler
-config = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(channel_secret=CHANNEL_SECRET)
 
 @app.route("/callback", methods=['POST'])
-def callback():
-    # get X-Line-Signature header value
-    signature = request.headers.get('X-Line-Signature')
-
-    # get request body as text
+def linebot():
     body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
-
-    # handle webhook body
+    json_data = json.loads(body)
+    print(json_data)
     try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        app.logger.info(
-            "Invalid signature. Please check your channel access token/channel secret."
+        line_bot_api = LineBotApi(
+            'Wz5hTGSPFsJlWWdhfkd2u9lNJ3laOWT/+HYdLgTYjSj3PBgboejmYEnyI41hF7FdJIlETGbIFi47wA5vUNCkuSGCws7UGNHT3a1lfY3RT8gxDZKM5gEQgFhi9k+UPxcyt7cnETvmluK+cFkqEPiJpQdB04t89/1O/w1cDnyilFU='
         )
-        abort(400)
-
+        handler = WebhookHandler('bfc154e4be5c1d9a4b2656addf1e479d')
+        signature = request.headers['X-Line-Signature']
+        handler.handle(body, signature)
+        tk = json_data['events'][0]['replyToken']  # 取得 reply token
+        msg = json_data['events'][0]['message']['text']  # 取得使用者發送的訊息
+        # 取出文字的前五個字元，轉換成小寫
+        ai_msg = msg[:6].lower()
+        reply_msg = ''
+        # 取出文字的前五個字元是 hi ai:
+        if ai_msg == 'hi ai:':
+            # openai.api_key = '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'
+            client = OpenAI(
+                # This is the default and can be omitted
+                api_key=os.environ.get("OPENAI_API_KEY"), )
+            # 將第六個字元之後的訊息發送給 OpenAI
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role":
+                        "user",
+                        "content":
+                        msg[6:],
+                    },
+                ],
+            )
+            # 接收到回覆訊息後，移除換行符號
+            reply_msg = response.choices[0].message.content
+        else:
+            reply_msg = msg
+        text_message = TextSendMessage(text=reply_msg)
+        line_bot_api.reply_message(tk, text_message)
+    except Exception as e:
+        print(e)
     return 'OK'
 
 
-@handler.add(FollowEvent)
-def handle_follow(event):
-    # 回應歡迎訊息
-    with ApiClient(config) as api_client:
-        messaging_api = MessagingApi(api_client)
-        messaging_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text="感謝您關注我們的LINE BOT！")]
-            )
-        )
-
-
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
-    with ApiClient(config) as api_client:
-        messaging_api = MessagingApi(api_client)
-        
-        # 如果收到特定訊息，回傳按鈕範例
-        if event.message.text.lower() == 'postback':
-            buttons_template = ButtonsTemplate(
-                title="Postback Action",
-                text="這是一個按鈕範例",
-                actions=[
-                    PostbackAction(
-                        label="點擊這裡",
-                        text="按鈕被點擊了！",
-                        data="postback_action"
-                    )
-                ]
-            )
-            template_message = TemplateMessage(
-                alt_text="這是一個範例按鈕樣板訊息",
-                template=buttons_template
-            )
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[template_message]
-                )
-            )
-        else:
-            # 回應一般文字訊息
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=f"你說的是: {event.message.text}")]
-                )
-            )
-
-
-@handler.add(PostbackEvent)
-def handle_postback(event):
-    with ApiClient(config) as api_client:
-        messaging_api = MessagingApi(api_client)
-        
-        if event.postback.data == "postback_action":
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="Postback 事件被觸發！")]
-                )
-            )
-
-
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run()
