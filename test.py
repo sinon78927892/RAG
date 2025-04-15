@@ -7,7 +7,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.tools import TavilySearchResults
 from typing_extensions import TypedDict
@@ -15,16 +16,43 @@ from typing import List
 from langchain.schema import Document
 from langgraph.graph import END, StateGraph
 
+# from flask import Flask, request, abort
+# from linebot.v3 import WebhookHandler
+# from linebot.v3.exceptions import InvalidSignatureError
+# from linebot.v3.messaging import (
+#     Configuration,
+#     ApiClient,
+#     MessagingApi,
+#     ReplyMessageRequest,
+#     TemplateMessage,
+#     ButtonsTemplate,
+#     PostbackAction,
+#     TextMessage
+# )
+# from linebot.v3.webhooks import (
+#     MessageEvent,
+#     FollowEvent,
+#     PostbackEvent,
+#     TextMessageContent
+# )
+
 # 加載 .env 檔案
 load_dotenv()
+
+# app = Flask(__name__)
 
 # 使用環境變數
 openai_api_key = os.getenv("OPENAI_API_KEY")
 os.environ['TAVILY_API_KEY'] = "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"
-file_path = R"C:\Users\sinon\Downloads\牙周病診治健康照護手冊.pdf"
+# CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+# CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+# 初始化 Configuration 和 WebhookHandler
+# config = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+# handler = WebhookHandler(channel_secret=CHANNEL_SECRET)
+
 
 # 第一步：加載並解析 PDF
-
+file_path = R"C:\Users\sinon\Downloads\牙周病診治健康照護手冊.pdf"
 # 使用 PyPDFLoader 加載 PDF 文件
 loader = PyPDFLoader(file_path)
 documents = loader.load()
@@ -92,14 +120,8 @@ prompt = ChatPromptTemplate.from_messages([
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 rag_chain = prompt | llm | StrOutputParser()
 
-# ===================================================================
-# 測試 rag_chain 功能
-# question = "牙周病與牙齦炎差在哪?"
-# docs = retriever.invoke(question)
-# generation = rag_chain.invoke({"documents": docs, "question": question})
-# print(generation)
-# ===================================================================
 
+#===================== 一般LLM問答 =========================
 # Prompt Teamplate
 instruction = """
 你是一位負責處理使用者問題的助手，請利用你的知識來回應問題。
@@ -115,13 +137,7 @@ prompt = ChatPromptTemplate.from_messages([
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 llm_chain = prompt | llm | StrOutputParser()
 
-
-# ===================================================================
-# 測試 llm_chain 功能
-# question = "Hi how are you?"
-# generation = llm_chain.invoke({"question": question})
-# print(generation)
-# ===================================================================
+#===================== 檢索結果評分 =========================
 class GradeDocuments(BaseModel):
     """
     確認提取文章與問題是否有關(yes/no)
@@ -149,14 +165,6 @@ structured_llm_grader = llm.with_structured_output(GradeDocuments)
 retrieval_grader = grade_prompt | structured_llm_grader
 
 
-# ===================================================================
-# 測試 grader 功能
-# question = "牙周病與牙齦炎差在哪?"
-# docs = retriever.invoke(question)
-# doc_txt = docs[0].page_content
-# response =  retrieval_grader.invoke({"question": question, "document": doc_txt})
-# print(response)
-# ===================================================================
 class GradeHallucinations(BaseModel):
     """
     確認答案是否為虛構(yes/no)
@@ -211,14 +219,6 @@ structured_llm_grader = llm.with_structured_output(GradeAnswer)
 # 使用 LCEL 語法建立 chain
 answer_grader = answer_prompt | structured_llm_grader
 
-
-# ===================================================================
-#測試 grader 功能
-# question = "牙周病與牙齦炎差在哪?"
-# docs = retriever.invoke(question)
-# generation = rag_chain.invoke({"documents": docs, "question": question})
-# answer_grader.invoke({"question": question,"generation": generation})
-# ===================================================================
 class GraphState(TypedDict):
     """
     State of graph.
@@ -246,10 +246,10 @@ def retrieve(state):
         print("---RETRIEVE---")
         question = state["question"]
 
-        # Retrieval
+        # 從向量資料庫取得文件
         documents = retriever.invoke(question)
 
-        return {"documents": documents, "question": question}
+        return {"documents": documents, "question": question} #回傳一個新的 state 字典，只保留 question 與新的 documents
 
 
 def web_search(state):
@@ -269,7 +269,7 @@ def web_search(state):
 
     # Web search
     docs = web_search_tool.invoke({"query": question})
-    web_results = [Document(page_content=d["content"]) for d in docs]
+    web_results = [Document(page_content=d["content"]) for d in docs] # Document()用於儲存一段文字和相關元資料的類別
 
     documents = documents + web_results
 
@@ -278,7 +278,7 @@ def web_search(state):
 
 def retrieval_grade(state):
     """
-    filter retrieved documents based on question.
+    根據問題篩選出相關的文件
 
     Args:
         state (dict):  The current state graph
@@ -288,7 +288,7 @@ def retrieval_grade(state):
     """
 
     # Grade documents
-    print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
+    print("--- 文件相關性檢查 ---")
 
     documents = state["documents"]
     question = state["question"]
@@ -296,6 +296,7 @@ def retrieval_grade(state):
     # Score each doc
     filtered_docs = []
     for d in documents:
+        #評分員進行評分
         score = retrieval_grader.invoke({
             "question": question,
             "document": d.page_content
@@ -368,12 +369,13 @@ def route_question(state):
 
     print("---ROUTE QUESTION---")
     question = state["question"]
-    source = question_router.invoke({"question": question})
+    source = question_router.invoke({"question": question}) 
 
-    # Fallback to plain LLM or raise error if no decision
+    # 如果 LLM 沒有給出任何工具建議，就直接請 LLM 回答
     if "tool_calls" not in source.additional_kwargs:
         print("  -ROUTE TO PLAIN LLM-")
         return "plain_answer"
+    # LLM 判斷失敗路由無法決定要用什麼資料來源
     if len(source.additional_kwargs["tool_calls"]) == 0:
         raise "Router could not decide source"
 
@@ -456,7 +458,7 @@ def grade_rag_generation(state):
         return "not supported"
 
 
-workflow = StateGraph(GraphState)
+workflow = StateGraph(GraphState) #建立流程有哪些 key 與其型態
 
 # Define the nodes
 workflow.add_node("web_search", web_search)  # web search
@@ -467,18 +469,18 @@ workflow.add_node("plain_answer", plain_answer)  # llm
 
 # Build graph
 workflow.set_conditional_entry_point(
-    route_question,
+    route_question, #函式判斷該走哪一條路
     {
         "web_search": "web_search",
         "vectorstore": "retrieve",
         "plain_answer": "plain_answer",
     },
 )
-workflow.add_edge("retrieve", "retrieval_grade")
-workflow.add_edge("web_search", "retrieval_grade")
+workflow.add_edge("retrieve", "retrieval_grade") # retrieve 下一步交給 retrieval_grade 檢查文件是否有用
+workflow.add_edge("web_search", "retrieval_grade") # web_search 下一步交給 retrieval_grade
 workflow.add_conditional_edges(
-    "retrieval_grade",
-    route_retrieval,
+    "retrieval_grade", #起點
+    route_retrieval, # 根據route_retrieval決定下一步要去哪
     {
         "web_search": "web_search",
         "rag_generate": "rag_generate",
@@ -488,7 +490,7 @@ workflow.add_conditional_edges(
     "rag_generate",
     grade_rag_generation,
     {
-        "not supported": "rag_generate",  # Hallucinations: re-generate
+        "not supported": "rag_generate",  # 若內容不支援問題（例如偏題）➜ 重新生成
         "not useful":
         "web_search",  # Fails to answer question: fall-back to web-search
         "useful": END,
@@ -497,19 +499,26 @@ workflow.add_conditional_edges(
 workflow.add_edge("plain_answer", END)
 
 # Compile
-app = workflow.compile()
+lc_app = workflow.compile()
 
 def run(question):
     inputs = {"question": question}
-    for output in app.stream(inputs):
-        print("\n")
+    output_text = ""
 
-    # Final generation
-    if 'rag_generate' in output.keys():
-        print(output['rag_generate']['generation'])
-    elif 'plain_answer' in output.keys():
-        print(output['plain_answer']['generation'])
+    for output in lc_app.stream(inputs):
+        print("Intermediate Output:", output)  # 檢查流式輸出的內容
 
+    if output and isinstance(output, dict):
+        if 'rag_generate' in output:
+            output_text = output['rag_generate']['generation']
+        elif 'plain_answer' in output:
+            output_text = output['plain_answer']['generation']
+
+    if not output_text:
+        output_text = "抱歉，我目前無法回答這個問題。"
+
+    print("Final Output:", output_text)  # 確保最終有回傳內容
+    return output_text
 
 def get_prompt():
     print("\n<------輸入'exit'來結束對話------->\n ")
@@ -521,10 +530,61 @@ def get_prompt():
             break
         else:
             try:
-                # Use the agent to process the prompt
                 answer = run(message)
                 print(answer)
+                print(type(answer))
             except Exception as e:
                 print(e)
 
 get_prompt()
+
+# @app.route("/callback", methods=['POST'])
+# def callback():
+#     # get X-Line-Signature header value
+#     signature = request.headers.get('X-Line-Signature')
+
+#     # get request body as text
+#     body = request.get_data(as_text=True)
+#     app.logger.info("Request body: " + body)
+
+#     # handle webhook body
+#     try:
+#         handler.handle(body, signature)
+#     except InvalidSignatureError:
+#         app.logger.info(
+#             "Invalid signature. Please check your channel access token/channel secret."
+#         )
+#         abort(400)
+
+#     return 'OK'
+
+# @handler.add(FollowEvent)
+# def handle_follow(event):
+#     # 回應歡迎訊息
+#     with ApiClient(config) as api_client:
+#         messaging_api = MessagingApi(api_client)
+#         messaging_api.reply_message(
+#             ReplyMessageRequest(
+#                 reply_token=event.reply_token,
+#                 messages=[TextMessage(text="感謝您關注我們的LINE BOT！")]
+#             )
+#         )
+
+# @handler.add(MessageEvent, message=TextMessage)
+# def handle_message(event):
+#     user_question = event.message.text
+#     response = run(user_question)  # 執行 run 並取得結果
+
+#     with ApiClient(config) as api_client:
+#         line_bot_api = MessagingApi(api_client)
+#         line_bot_api.reply_message(
+#             ReplyMessageRequest(
+#                 reply_token=event.reply_token,
+#                 messages=[TextMessage(text=response)]
+#             )
+#         )
+
+
+
+# if __name__ == "__main__":
+#     app.run(port=5000)
