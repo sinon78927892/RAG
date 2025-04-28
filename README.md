@@ -38,12 +38,12 @@
 4. **Docker 部署**：應用程式使用 Docker 容器化，簡化了部署過程，並保證在任何環境中都能穩定運行。
 
 ## 技術架構
-*LangChain
-*LangGraph
-*Docker
-*FAISS (向量資料庫)
-*LINE Messaging API
-*Flask
+* LangChain
+* LangGraph
+* Docker
+* FAISS (向量資料庫)
+* LINE Messaging API
+* Flask
 
 ## 安裝與使用
 
