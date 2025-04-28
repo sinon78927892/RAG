@@ -1,17 +1,15 @@
-# 使用基底映像
-FROM python:3.9-slim
+# 使用官方 Python 映像
+FROM python:3.13-slim
 
-# 設定容器內的工作目錄為 /app
+# 設定工作目錄
 WORKDIR /app
 
-# 複製需求檔案到 /app
-# COPY requirements.txt .
+# 複製 requirements.txt 並安裝依賴
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# 安裝需求
-# RUN pip install -r requirements.txt
-
-# 複製應用程式檔案到 /app
+# 複製所有應用程式檔案
 COPY . .
 
-# 6. 指定容器啟動指令
+# 啟動應用程式
 CMD ["python", "app.py"]
