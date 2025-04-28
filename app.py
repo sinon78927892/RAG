@@ -41,7 +41,7 @@ configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-os.environ['TAVILY_API_KEY'] = "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"
+os.environ['TAVILY_API_KEY'] = "TAVILY_API_KEY"
 
 file_path = os.path.join("PDF", "A survey on large language model (LLM) security and privacy.pdf")
 loader = PyPDFLoader(file_path)
